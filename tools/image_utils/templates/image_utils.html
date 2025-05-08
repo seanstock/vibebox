@@ -75,6 +75,14 @@
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
     }
+
+    .comparison-image {
+        max-width: 100%;
+        height: auto;
+        border-radius: 0.5rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        border: 1px solid var(--dark-600);
+    }
 </style>
 {% endblock %}
 
@@ -199,6 +207,7 @@
     <div class="mb-6">
         <p class="text-gray-400">Apply 3D perspective transformation and shadow effects to your images</p>
     </div>
+    
     
     <div class="bg-dark-800 rounded-xl shadow-lg p-6 mb-8 border border-dark-600">
         <div class="mb-6">
@@ -351,6 +360,21 @@
             </div>
         </form>
     </div>
+
+        <!-- Before/After Demonstration -->
+        <div class="mb-8 bg-dark-800 rounded-xl shadow-lg p-6 border border-dark-600">
+            <h2 class="text-xl font-semibold text-white mb-4 text-center">Example Transformation</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                <div class="text-center">
+                    <h3 class="text-lg font-medium text-gray-300 mb-3">Before</h3>
+                    <img src="{{ url_for('image_utils.static', filename='images/analytics.png') }}" alt="Original Image Example" class="comparison-image mx-auto">
+                </div>
+                <div class="text-center">
+                    <h3 class="text-lg font-medium text-gray-300 mb-3">After (UI Mockup Preset)</h3>
+                    <img src="{{ url_for('image_utils.static', filename='images/analytics_tilt.png') }}" alt="Transformed Image Example" class="comparison-image mx-auto">
+                </div>
+            </div>
+        </div>
     
     {% if error %}
     <div class="bg-red-900 border-l-4 border-red-500 p-4 mb-8 rounded-r">

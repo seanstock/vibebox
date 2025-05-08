@@ -5,7 +5,7 @@ import os
 from tools.image_utils.routes import image_utils_bp, TOOL_META as image_utils_meta
 from tools.print_optimizer.routes import print_optimizer_bp, TOOL_META as print_optimizer_meta
 from tools.chaosgraph.routes import chaosgraph_bp, TOOL_META as chaosgraph_meta
-from runic.routes import runic_bp, TOOL_META as runic_meta
+from tools.runic.routes import runic_bp, TOOL_META as runic_meta
 
 # Create Flask app
 app = Flask(__name__, template_folder='templates')
