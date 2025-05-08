@@ -1,0 +1,65 @@
+{% extends "shared/layout.html" %}
+
+{% block title %}Runic Life Keeper | vibeBox{% endblock %}
+
+{% block header_title %}Runic Life Keeper{% endblock %}
+
+{% block additional_styles %}
+<style>
+    /* Fullscreen grid without margin */
+    .quadrant {
+        touch-action: manipulation; /* Improve tap response */
+        -webkit-tap-highlight-color: transparent;
+    }
+</style>
+{% endblock %}
+
+{% block additional_head %}
+<script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('lifeKeeper', () => ({
+            players: [
+                { id: 1, life: 40, color: 'bg-blue-600', rotate: 'rotate-180' },
+                { id: 2, life: 40, color: 'bg-orange-500', rotate: 'rotate-180' },
+                { id: 3, life: 40, color: 'bg-teal-600', rotate: '' },
+                { id: 4, life: 40, color: 'bg-green-500', rotate: '' }
+            ],
+            diceResult: '🎲',
+            adjust(idx, delta) {
+                this.players[idx].life += delta;
+            },
+            tap(idx, e) {
+                const rect = e.target.getBoundingClientRect();
+                const isLeftHalf = (e.clientX - rect.left) < rect.width / 2;
+                this.adjust(idx, isLeftHalf ? -1 : 1);
+            },
+            roll() {
+                this.diceResult = Math.floor(Math.random() * 20) + 1;
+            }
+        }));
+    });
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="w-full h-[calc(100vh-4rem)] relative" x-data="lifeKeeper">
+    <!-- 2x2 Grid -->
+    <div class="grid grid-cols-2 grid-rows-2 w-full h-full divide-black divide-x-4 divide-y-4">
+        <template x-for="(player, idx) in players" :key="player.id">
+            <div :class="player.color + ' quadrant relative flex items-center justify-center select-none'" @click="tap(idx, $event)">
+                <!-- Life Total -->
+                <div :class="'text-6xl font-extrabold text-black ' + player.rotate" x-text="player.life"></div>
+                <!-- Heart icon -->
+                <svg class="absolute w-6 h-6 text-black left-2 top-2" fill="currentColor" viewBox="0 0 24 24" :class="player.rotate">
+                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6.5 3.5 5 5.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5 18.5 5 20 6.5 20 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                </svg>
+            </div>
+        </template>
+    </div>
+
+    <!-- Central Dice -->
+    <button @click="roll" class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full bg-white border-4 border-black flex items-center justify-center text-2xl font-bold shadow-lg">
+        <span x-text="diceResult"></span>
+    </button>
+</div>
+{% endblock %} 

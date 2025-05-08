@@ -1,0 +1,43 @@
+{% extends "shared/layout.html" %}
+
+{% block title %}vibeBox | Developer Tools{% endblock %}
+
+{% block header_title %}Welcome to vibeBox{% endblock %}
+
+{% block additional_head %}
+<!-- Favicon using an SVG data URI -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90' font-family='Arial, sans-serif' fill='%236E44FF'%3EV%3C/text%3E%3C/svg%3E">
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-white">Developer Tools Suite</h1>
+        <p class="text-gray-400 mt-2">A collection of helpful utilities for development and design work</p>
+    </div>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {% for tool in tools %}
+        <a href="/{{ tool.endpoint }}" class="block bg-dark-800 rounded-xl shadow-lg p-6 border border-dark-600 hover:border-vibrant-purple transition-colors duration-300">
+            <div class="flex items-center mb-4">
+                <span class="text-3xl mr-3">{{ tool.icon }}</span>
+                <h2 class="text-xl font-semibold text-white">{{ tool.name }}</h2>
+            </div>
+            <p class="text-gray-400">{{ tool.desc }}</p>
+        </a>
+        {% endfor %}
+    </div>
+    
+    <div class="mt-12 bg-dark-800 rounded-xl shadow-lg p-6 border border-dark-600">
+        <h2 class="text-xl font-semibold text-white mb-4">About vibeBox</h2>
+        <p class="text-gray-400">
+            vibeBox is a collection of developer tools built for the modern web. Each tool is designed to help 
+            with specific development and design tasks, making your workflow more efficient.
+        </p>
+        <p class="text-gray-400 mt-3">
+            All tools are free to use, open-source, and built with privacy in mind. No data leaves your browser
+            unless explicitly needed for the tool to function.
+        </p>
+    </div>
+</div>
+{% endblock %} 
