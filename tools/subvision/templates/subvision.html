@@ -1,0 +1,418 @@
+{% extends "shared/layout.html" %}
+
+{% block title %}Subvision | vibeBox{% endblock %}
+
+{% block header_title %}Subvision{% endblock %}
+
+{% block additional_styles %}
+<style>
+    /* Center the game container */
+    #gameContainer canvas {
+        display: block;
+        margin: 1rem auto; /* Centers the canvas */
+        border: 3px solid var(--dark-600);
+    }
+    #gameContainer {
+        line-height: 0; /* Prevent extra space below canvas */
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-6 text-center">
+    <p class="text-gray-400 mb-4">Tap or click to make the submarine ascend. Avoid the terrain!</p>
+    <!-- Phaser will create the canvas inside this div -->
+    <div id="gameContainer"></div> 
+</div>
+
+<!-- Load Phaser from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+
+<script>
+    const gameWidth = 480;
+    const gameHeight = 640;
+    let game;
+
+    // NEW: Game design constants
+    const PIXEL_BLOCK_SIZE = 4; // Size of each "destructible pixel" (was 2, originally 8)
+    const BULLET_BLAST_RADIUS = 120; // Radius of bullet's destructive effect (was 30)
+
+    const config = {
+        type: Phaser.AUTO, // Use WebGL if available, otherwise Canvas
+        width: gameWidth,
+        height: gameHeight,
+        parent: 'gameContainer', // ID of the div to contain the canvas
+        backgroundColor: '#004488', // Darker blue sea (was #0077cc)
+        physics: {
+            default: 'arcade',
+            arcade: {
+                gravity: { y: 500 }, // Reduced gravity (was 800)
+                debug: false // Debug mode off
+            }
+        },
+        scene: {
+            preload: preload,
+            create: create,
+            update: update
+        }
+    };
+
+    // --- Game Variables ---
+    let sub;
+    let obstacles; // Phaser group for obstacles
+    let scoreTriggers; // NEW: Separate group for score triggers
+    let bullets; // NEW: Phaser group for bullets
+    let score = 0;
+    let scoreText;
+    let gameOverText;
+    let startText;
+    let timedEvent;
+    let isGameOver = false;
+    let gameStarted = false;
+    let ammoCount = 3; // NEW: Ammunition count
+    let ammoText; // NEW: Text for ammo display
+
+    // --- Phaser Scene Functions ---
+    function preload() {
+        // Load assets here if needed (e.g., images for sub, terrain)
+        // this.load.image('submarine', 'path/to/sub.png');
+        
+        // Bullet texture generation
+        const bulletGraphics = this.make.graphics({ fillStyle: { color: 0xff0000 } }); // Red bullet
+        bulletGraphics.fillRect(0, 0, 20, 5); // Bullet size
+        bulletGraphics.generateTexture('bulletTexture', 20, 5);
+        bulletGraphics.destroy();
+
+        // NEW: Pixel Block Texture
+        const pixelBlockGraphics = this.make.graphics({ fillStyle: { color: 0x5C4033 } }); // Darker Brownish terrain (was 0x8B4513)
+        pixelBlockGraphics.fillRect(0, 0, PIXEL_BLOCK_SIZE, PIXEL_BLOCK_SIZE);
+        pixelBlockGraphics.generateTexture('pixelBlockTexture', PIXEL_BLOCK_SIZE, PIXEL_BLOCK_SIZE);
+        pixelBlockGraphics.destroy();
+    }
+
+    function create() {
+        // --- NEW: Clear groups if they exist (for scene restarts) ---
+        // REMOVING these explicit clears. scene.stop() should handle object destruction.
+        // if (obstacles) {
+        //     obstacles.clear(true, true); // Destroy children, remove from scene
+        // }
+        // if (bullets) {
+        //     bullets.clear(true, true);
+        // }
+        // if (scoreTriggers) {
+        //     scoreTriggers.clear(true, true);
+        // }
+        
+        // Reset main game state variables (some are also reset in startGame)
+        isGameOver = false;
+        gameStarted = false;
+        score = 0;
+        ammoCount = 3; // NEW: Reset ammo count here as well for full scene restarts
+
+        // --- Submarine Setup ---
+        const subWidth = 40;
+        const subHeight = 20;
+        const subGraphics = this.make.graphics(); 
+        
+        // Propeller (at the left, x=0)
+        subGraphics.fillStyle(0xaaaaaa); // Grey
+        subGraphics.fillRect(0, subHeight * 0.35, subWidth * 0.15, subHeight * 0.3);
+
+        // Main body (rounded rectangle or ellipse-like), starts after propeller
+        // The rounded end (front) will be on the right.
+        subGraphics.fillStyle(0xffff00); // Yellow
+        subGraphics.fillRoundedRect(subWidth * 0.1, subHeight / 4, subWidth * 0.85, subHeight / 2, (subHeight/4)); 
+
+        // Conning tower - on top of the main body, shifted right a bit
+        subGraphics.fillStyle(0xdddd00); // Slightly darker yellow
+        subGraphics.fillRect(subWidth * 0.4, 0, subWidth * 0.45, subHeight * 0.35);
+
+        // Optional: A small window on the conning tower, towards the front
+        subGraphics.fillStyle(0x000000); // Black
+        subGraphics.fillCircle(subWidth * 0.7, subHeight * 0.2, subHeight * 0.1); // (subWidth * 0.5, subHeight * 0.25, subHeight * 0.1);
+
+        subGraphics.generateTexture('subTexture', subWidth, subHeight);
+        subGraphics.destroy();
+        
+        // --- Obstacle Texture Setup (Done once) ---
+        // const obsGraphics = this.add.graphics({ fillStyle: { color: 0x8B4513 } }); // Brownish terrain
+        // obsGraphics.fillRect(0, 0, 80, 20); // Use a base size, will be scaled
+        // obsGraphics.generateTexture('obstacleTexture', 80, 20);
+        // obsGraphics.destroy();
+
+        // --- Score Trigger Texture (Temporary for debugging) ---
+        const triggerGraphics = this.add.graphics({ fillStyle: { color: 0x0000FF, alpha: 0.5 } });
+        triggerGraphics.fillRect(0, 0, 10, 20); // Small base size
+        triggerGraphics.generateTexture('triggerTexture', 10, 20);
+        triggerGraphics.destroy();
+
+        sub = this.physics.add.sprite(100, gameHeight / 2, 'subTexture');
+        sub.clearTint(); // NEW: Clear tint from previous game over
+        sub.setActive(true).setVisible(true); // NEW: Ensure active and visible
+        sub.setCollideWorldBounds(true); 
+        sub.body.allowGravity = false; 
+        if (sub.body) { // Ensure body exists before trying to enable
+            sub.body.enable = true; // NEW: Ensure physics body is enabled
+        }
+
+        // --- Obstacle Setup ---
+        obstacles = this.physics.add.group();
+        // --- NEW: Create score trigger group ---
+        scoreTriggers = this.physics.add.group({ allowGravity: false });
+        // --- NEW: Create bullets group ---
+        bullets = this.physics.add.group({
+            defaultKey: 'bulletTexture', // Texture for bullets
+            maxSize: 20 // Max number of bullets on screen
+        });
+
+        // --- Score Text ---
+        scoreText = this.add.text(16, 16, 'Score: 0', { fontSize: '32px', fill: '#FFF' });
+        // --- NEW: Ammo Text ---
+        ammoText = this.add.text(gameWidth - 150, 16, 'Ammo: ' + ammoCount, { fontSize: '32px', fill: '#FFF' });
+
+        // --- Game Over/Start Text ---
+        gameOverText = this.add.text(gameWidth / 2, gameHeight / 2 - 50, 'Game Over!', { fontSize: '48px', fill: '#FFF' }).setOrigin(0.5).setVisible(false);
+        startText = this.add.text(gameWidth / 2, gameHeight / 2, 'Tap to Start', { fontSize: '40px', fill: '#FFF' }).setOrigin(0.5).setVisible(true);
+
+        // --- Collision Handling ---
+        this.physics.add.collider(sub, obstacles, hitObstacle, null, this);
+        // --- NEW: Overlap check against the scoreTriggers group ---
+        this.physics.add.overlap(sub, scoreTriggers, increaseScore, null, this);
+        // --- NEW: Collision between bullets and obstacles ---
+        this.physics.add.overlap(bullets, obstacles, hitObstacleWithBullet, null, this);
+
+        // --- Input Handling ---
+        this.input.on('pointerdown', () => {
+            if (!gameStarted) {
+                startGame(this);
+            } else if (!isGameOver) {
+                flap();
+            } else {
+                // Restart logic - MORE EXPLICIT RESTART WITH DELAY
+                console.log('Attempting to restart scene. Current scene key:', this.scene.key);
+                setTimeout(() => {
+                    this.scene.stop();
+                    this.scene.start(this.scene.key); 
+                }, 50); // Small delay (50ms)
+            }
+        });
+
+        // --- NEW: Spacebar for firing ---
+        this.input.keyboard.on('keydown-SPACE', () => {
+            if (gameStarted && !isGameOver) {
+                fireBullet();
+            }
+        });
+    }
+
+    function update() {
+        // Check if sub goes out of bounds vertically
+        if (gameStarted && !isGameOver && (sub.y < 0 || sub.y > gameHeight)) {
+             gameOver(this); // Pass scene context if needed
+        }
+        
+        // If game hasn't started, make sub hover
+        if (!gameStarted) {
+             sub.y = gameHeight / 2 + Math.sin(this.time.now / 200) * 10;
+             sub.setVelocityY(0);
+        }
+
+        // --- NEW: Bullet cleanup ---
+        bullets.children.each(function (bullet) {
+            if (bullet && bullet.active && bullet.x > gameWidth + bullet.width) {
+                bullet.setActive(false).setVisible(false); // Deactivate bullet
+                // Optionally: bullet.destroy(); if not reusing
+            }
+        }.bind(this));
+    }
+
+    // --- Helper Functions ---
+    function startGame(scene) {
+        scene.physics.resume(); // NEW: Ensure physics is running
+
+        gameStarted = true;
+        isGameOver = false;
+        score = 0;
+        ammoCount = 3; // NEW: Reset ammo
+        scoreText.setText('Score: 0');
+        ammoText.setText('Ammo: ' + ammoCount); // NEW: Update ammo display
+        startText.setVisible(false);
+        gameOverText.setVisible(false);
+
+        // Reset submarine state fully
+        if (sub) {
+            sub.clearTint();
+            sub.setActive(true).setVisible(true);
+            sub.setPosition(100, gameHeight / 2);
+            sub.setVelocity(0,0); // Reset velocity
+            sub.body.allowGravity = true;
+            if(sub.body) sub.body.enable = true; // Ensure body is enabled here too
+        }
+
+        flap(); // Initial flap
+
+        // Timer to add obstacles periodically
+        timedEvent = scene.time.addEvent({
+            delay: 1500, // Add obstacles every 1.5 seconds
+            callback: addObstaclePair,
+            callbackScope: scene,
+            loop: true
+        });
+    }
+
+    function flap() {
+        if (sub && sub.body) { // Check if sub and its body exist
+            sub.setVelocityY(-300); // Apply upward velocity
+        }
+    }
+
+    function addObstaclePair() {
+        const gapHeight = 150;
+        const obstacleYVariance = 100; 
+        const gapStartY = Phaser.Math.Between(obstacleYVariance, gameHeight - obstacleYVariance - gapHeight);
+
+        const baseObstacleWidth = 80; // Keep this for the score trigger positioning for now
+
+        // --- Create Top Obstacle (as pixel blocks) ---
+        const topObstacleHeight = gapStartY;
+        // Calculate how many blocks fit horizontally - for now, assume a fixed width
+        const numBlocksHorizontal = Math.ceil(baseObstacleWidth / PIXEL_BLOCK_SIZE);
+
+        for (let y = 0; y < topObstacleHeight; y += PIXEL_BLOCK_SIZE) {
+            for (let i = 0; i < numBlocksHorizontal; i++) {
+                const xPos = gameWidth + (i * PIXEL_BLOCK_SIZE) + (PIXEL_BLOCK_SIZE / 2);
+                const yPos = y + (PIXEL_BLOCK_SIZE / 2);
+                const block = obstacles.create(xPos, yPos, 'pixelBlockTexture');
+                block.body.setAllowGravity(false);
+                block.setVelocityX(-150);
+                block.setImmovable(true);
+                // No need for refreshBody if not scaling individual small blocks
+            }
+        }
+
+        // --- Create Bottom Obstacle (as pixel blocks) ---
+        const bottomObstacleStartY = gapStartY + gapHeight;
+        const bottomObstacleHeight = gameHeight - bottomObstacleStartY;
+
+        for (let y = 0; y < bottomObstacleHeight; y += PIXEL_BLOCK_SIZE) {
+            for (let i = 0; i < numBlocksHorizontal; i++) {
+                const xPos = gameWidth + (i * PIXEL_BLOCK_SIZE) + (PIXEL_BLOCK_SIZE / 2);
+                const yPos = bottomObstacleStartY + y + (PIXEL_BLOCK_SIZE / 2);
+                const block = obstacles.create(xPos, yPos, 'pixelBlockTexture');
+                block.body.setAllowGravity(false);
+                block.setVelocityX(-150);
+                block.setImmovable(true);
+            }
+        }
+        
+        // Add a trigger for scoring - slightly ahead of the obstacle visual
+        const scoreTriggerWidth = 10; // Keep it thin
+        // Position score trigger based on the original intended width of the obstacle passage
+        const scoreTrigger = scoreTriggers.create(gameWidth + baseObstacleWidth + scoreTriggerWidth / 2, gapStartY + gapHeight / 2, 'triggerTexture').setVisible(true);
+        scoreTrigger.setDisplaySize(scoreTriggerWidth, gapHeight); // Visual size
+        scoreTrigger.setVelocityX(-150);
+        scoreTrigger.body.checkCollision.none = true; 
+        scoreTrigger.refreshBody(); 
+        scoreTrigger.setData('scored', false);
+
+        // Clean up obstacles and score triggers when they go off screen
+        obstacles.children.each(function (obstacle) {
+            if (obstacle && obstacle.x < -obstacle.width/2) { // Use physics body position if available
+                 // REMOVED graphics cleanup
+                 // if(obstacle.data && obstacle.data.list.graphics){
+                 //     obstacle.data.list.graphics.destroy();
+                 // }
+                 obstacle.destroy(); // Destroy the sprite itself
+            }
+        });
+        // NEW: Clean up score triggers
+        scoreTriggers.children.each(function (trigger) {
+            if (trigger && trigger.x < -trigger.width / 2) {
+                trigger.destroy();
+            }
+        });
+        // REMOVED old single trigger cleanup
+        // if (scoreTrigger.x < -scoreTrigger.width / 2) { 
+        //     scoreTrigger.destroy();
+        // }
+    }
+
+    function increaseScore(player, trigger) {
+        if (trigger.getData('scored') === false) { 
+             score += 1;
+             scoreText.setText('Score: ' + score);
+             trigger.setData('scored', true); // Mark as scored
+        }
+    }
+
+    function hitObstacle(player, obstacle) {
+        gameOver(this); // Pass scene context if needed
+    }
+    
+    function gameOver(scene) {
+        if (isGameOver) return;
+        isGameOver = true;
+
+        if (scene && scene.physics) { 
+            scene.physics.pause(); 
+        }
+        if (timedEvent) {
+             timedEvent.remove(false); // Stop adding new obstacles
+             timedEvent = null; // Explicitly nullify
+        }
+        sub.setTint(0xff0000); // Make sub red
+        gameOverText.setVisible(true);
+        startText.setText('Tap to Restart').setVisible(true); // Reuse startText for restart message
+    }
+
+    // --- NEW: Fire Bullet Function ---
+    function fireBullet() {
+        if (ammoCount > 0) { // NEW: Check for ammo
+            ammoCount--; // NEW: Decrement ammo
+            ammoText.setText('Ammo: ' + ammoCount); // NEW: Update ammo display
+
+            // Emit bullet from the front-right of the sub
+            // Assuming sub sprite origin is 0.5, 0.5 (center)
+            const bullet = bullets.get(sub.x + (subWidth / 2) - 5, sub.y); // -5 to make it emerge just before the very edge
+
+            if (bullet) {
+                bullet.setActive(true).setVisible(true);
+                bullet.body.allowGravity = false;
+                bullet.setVelocityX(500); // Bullet speed
+                // bullet.body.setSize(20, 5); // Set physics body size if needed, usually auto
+            }
+        } else {
+            // Optionally, play an "out of ammo" sound or visual cue here
+            console.log("Out of ammo!");
+        }
+    }
+    
+    // --- NEW: Bullet Hit Obstacle Handler ---
+    function hitObstacleWithBullet(bullet, firstHitBlock) { // firstHitBlock is one of the pixel blocks
+        if (!bullet.active) { // Bullet already processed
+            return;
+        }
+
+        const impactX = bullet.x;
+        const impactY = bullet.y;
+
+        bullet.setActive(false).setVisible(false);
+        // Optionally: bullet.destroy(); if not reusing bullets from the group often
+
+        // Iterate through all blocks in the obstacles group
+        obstacles.children.each(function (block) {
+            if (block && block.active) { // Check if block exists and is active
+                const distance = Phaser.Math.Distance.Between(impactX, impactY, block.x, block.y);
+                if (distance < BULLET_BLAST_RADIUS) {
+                    block.destroy(); // Destroy the pixel block
+                }
+            }
+        });
+        // Add explosion/particle effects here in the future
+    }
+
+    // Start the game
+    game = new Phaser.Game(config);
+
+</script>
+{% endblock %} 

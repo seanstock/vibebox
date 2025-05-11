@@ -4,7 +4,7 @@ from flask import Blueprint, render_template
 TOOL_META = {
     "name": "Runic Life Keeper",  # Friendly name
     "endpoint": "runic",          # Used in URL and template path
-    "desc": "MTG life tracker & dice roller",  # Short description
+    "desc": "MTG life tracker & dice roller (WIP)",  # Short description
     "icon": "🧙"                  # Unicode wizard icon for flair
 }
 

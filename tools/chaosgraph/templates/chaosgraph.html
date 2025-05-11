@@ -12,18 +12,17 @@
         align-items: center;
         background-color: #1E1E1E;
         border-radius: 0.75rem;
-        padding: 0.5rem 1rem;
+        padding: 0.75rem 1rem;
         margin-bottom: 1rem;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
         flex-wrap: wrap;
         border: 1px solid #3D3D3D;
+        gap: 1rem;
     }
-    .action-bar > div {
-        margin-right: 1rem;
-        margin-bottom: 0.5rem;
-    }
-    .action-bar > div:last-child {
-        margin-right: 0;
+    .action-bar-group {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
     }
     .action-bar label {
         display: inline-block;
@@ -166,6 +165,48 @@
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
         border: 1px solid #3D3D3D;
     } Removed */
+
+    .slider-wrapper {
+        display: flex;
+        align-items: center;
+    }
+    .slider-steppers {
+        display: flex;
+        flex-direction: column; /* Stack buttons vertically */
+        margin-right: 0.75rem; /* Space between buttons and slider */
+    }
+    .slider-btn {
+        background-color: hsl(0, 0%, 30%); /* Purple */
+        color: white;
+        border: none;
+        padding: 0.2rem 0.4rem; /* Adjusted padding for small buttons */
+        border-radius: 0.25rem;
+        cursor: pointer;
+        font-size: 0.8rem; /* Smaller font for arrows */
+        line-height: 1;
+        width: 20px; /* Fixed width */
+        height: 16px; /* Fixed height */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    .slider-btn:hover {
+        background-color: #5838cc; /* Darker purple */
+    }
+    .slider-btn.increment-btn { /* Assuming increment is top button */
+        margin-bottom: 0.2rem; /* Small space between up/down buttons */
+    }
+    .slider-wrapper input[type="range"] {
+        flex-grow: 1; /* Make slider take remaining width */
+        width: auto; /* Override previous width: 100% from generic input[type="range"] */
+    }
+
+    /* Ensure toggle labels in action bar are styled correctly, overriding general .action-bar label if needed */
+    .action-bar .toggle-container-inline label {
+        margin-left: 0.25rem; /* Specific to toggle checkbox */
+        margin-right: 0; /* Avoid double margin from general .action-bar label */
+        font-weight: normal; /* Override general .action-bar label font-weight */
+    }
 </style>
 {% endblock %}
 
@@ -174,6 +215,16 @@
 <script>
     // The entire spirograph JavaScript goes here
     document.addEventListener('DOMContentLoaded', function() {
+        const MAX_INPUT_RADIUS = 100;
+        const TARGET_SVG_RADIUS = 380; // Target drawing radius in SVG units for MAX_INPUT_RADIUS
+        const DISPLAY_SCALE_FACTOR = TARGET_SVG_RADIUS / MAX_INPUT_RADIUS; // Should be 3.8
+
+        // New constants for refactored animation
+        const TARGET_DELTA_T_PER_POINT = 0.03;
+        const MAX_SPEED_SLIDER_HTML_VALUE = 100;
+        const MAX_DESIRED_T_ADV_PER_FRAME = 1.0; 
+        const MAX_POINTS_CALC_PER_FRAME = 250;
+
         // Spirograph parameters
         let outerRadius = parseInt(document.getElementById('outer-radius').value);
         let middleRadius = parseInt(document.getElementById('middle-radius').value);
@@ -181,6 +232,7 @@
         let penOffsetFromCenter = parseInt(document.getElementById('offset').value);
         let speed = parseInt(document.getElementById('speed').value);
         let useMiddleGear = document.getElementById('use-middle-gear').checked;
+        let showGearVisuals = document.getElementById('show-gear-visuals').checked;
         
         // D3 setup
         const svgWidth = 800;
@@ -206,7 +258,7 @@
         
         // Add circle for outer gear
         const outerGear = spirographGroup.append('circle')
-            .attr('r', outerRadius)
+            .attr('r', outerRadius * DISPLAY_SCALE_FACTOR)
             .attr('fill', 'none')
             .attr('stroke', '#bbb')
             .attr('stroke-width', 2)
@@ -214,7 +266,7 @@
         
         // Add circle for middle gear
         const middleGear = spirographGroup.append('circle')
-            .attr('r', middleRadius)
+            .attr('r', middleRadius * DISPLAY_SCALE_FACTOR)
             .attr('fill', 'none')
             .attr('stroke', '#aaa')
             .attr('stroke-width', 1)
@@ -286,59 +338,95 @@
         // Animation function
         function animate() {
             if (!isAnimating) return;
+
+            const currentSpeed = parseInt(document.getElementById('speed').value);
+            const normalizedSpeed = currentSpeed / MAX_SPEED_SLIDER_HTML_VALUE;
+            const targetTAdvThisFrame = normalizedSpeed * MAX_DESIRED_T_ADV_PER_FRAME;
+
+            let numPointsToCalculateIdeal = Math.max(1, Math.round(targetTAdvThisFrame / TARGET_DELTA_T_PER_POINT));
+            const numPointsToCalculateActual = Math.min(numPointsToCalculateIdeal, MAX_POINTS_CALC_PER_FRAME);
             
-            // Calculate the position at time t
-            const point = calculatePoint(t);
-            
-            // Add the point to our path data
-            pathData.push(point);
+            // If targetTAdvThisFrame is 0 (e.g. speed is 0, though slider min is 1), numPointsToCalculateActual could be 0 if not for Math.max(1, ..) 
+            // actualDeltaTPerSubPoint could be NaN if numPointsToCalculateActual is 0. Ensure it's at least 1.
+            const actualDeltaTPerSubPoint = (numPointsToCalculateActual > 0) ? (targetTAdvThisFrame / numPointsToCalculateActual) : 0;
+
+            let lastCalculatedPoint = null;
+
+            if (actualDeltaTPerSubPoint > 0) { // Only calculate if there's movement
+                for (let i = 0; i < numPointsToCalculateActual; i++) {
+                    const point_t = t + i * actualDeltaTPerSubPoint;
+                    const point = calculatePoint(point_t);
+                    pathData.push(point);
+                    if (i === numPointsToCalculateActual - 1) {
+                        lastCalculatedPoint = point;
+                    }
+                }
+            }
             
             // Update the path
             const lineFunction = d3.line()
-                .x(d => d.x)
-                .y(d => d.y);
+                .x(d => d.x * DISPLAY_SCALE_FACTOR)
+                .y(d => d.y * DISPLAY_SCALE_FACTOR);
             
             path.attr('d', lineFunction(pathData));
             
             // Update pen position display
-            penPoint.attr('cx', point.x).attr('cy', point.y);
-            
-            // Update the position of the displayed gears
-            if (useMiddleGear) {
-                middleGear.attr('r', middleRadius); // Ensure middle gear has correct radius
-                const middleGearDisplayCenterX = (outerRadius - middleRadius) * Math.cos(t);
-                const middleGearDisplayCenterY = (outerRadius - middleRadius) * Math.sin(t);
-                
-                middleGear
-                    .attr('cx', middleGearDisplayCenterX)
-                    .attr('cy', middleGearDisplayCenterY);
-                
-                const middleGearDisplayRotation = ((outerRadius - middleRadius) / middleRadius) * t;
-                
-                const innerGearDisplayCenterX_relative = (middleRadius - innerRadius) * Math.cos(middleGearDisplayRotation);
-                const innerGearDisplayCenterY_relative = (middleRadius - innerRadius) * Math.sin(middleGearDisplayRotation);
-                
-                const innerGearDisplayAbsCenterX = middleGearDisplayCenterX + innerGearDisplayCenterX_relative;
-                const innerGearDisplayAbsCenterY = middleGearDisplayCenterY + innerGearDisplayCenterY_relative;
-                
-                innerGear
-                    .attr('r', innerRadius)
-                    .attr('cx', innerGearDisplayAbsCenterX)
-                    .attr('cy', innerGearDisplayAbsCenterY);
+            const final_t_for_frame = t + targetTAdvThisFrame;
+            const pen_display_point = lastCalculatedPoint ? lastCalculatedPoint : calculatePoint(t);
+
+            if (showGearVisuals) {
+                penPoint.attr('cx', pen_display_point.x * DISPLAY_SCALE_FACTOR).attr('cy', pen_display_point.y * DISPLAY_SCALE_FACTOR).style('display', 'inline');
             } else {
-                middleGear.attr('r', 0); // Hide middle gear
-                
-                const innerGearDisplayCenterX = (outerRadius - innerRadius) * Math.cos(t);
-                const innerGearDisplayCenterY = (outerRadius - innerRadius) * Math.sin(t);
-                
-                innerGear
-                    .attr('r', innerRadius)
-                    .attr('cx', innerGearDisplayCenterX)
-                    .attr('cy', innerGearDisplayCenterY);
+                penPoint.style('display', 'none');
             }
             
-            // Increment time
-            t += 0.01 * speed;
+            // Update the position of the displayed gears
+            if (showGearVisuals) {
+                outerGear.style('display', 'inline'); // Ensure outer gear is visible if toggled on
+                if (useMiddleGear) {
+                    middleGear.style('display', 'inline');
+                    innerGear.style('display', 'inline');
+
+                    middleGear.attr('r', middleRadius * DISPLAY_SCALE_FACTOR);
+                    const middleGearDisplayCenterX = (outerRadius - middleRadius) * Math.cos(final_t_for_frame);
+                    const middleGearDisplayCenterY = (outerRadius - middleRadius) * Math.sin(final_t_for_frame);
+                    
+                    middleGear
+                        .attr('cx', middleGearDisplayCenterX * DISPLAY_SCALE_FACTOR)
+                        .attr('cy', middleGearDisplayCenterY * DISPLAY_SCALE_FACTOR);
+                    
+                    const middleGearDisplayRotation = ((outerRadius - middleRadius) / middleRadius) * final_t_for_frame;
+                    
+                    const innerGearDisplayCenterX_relative = (middleRadius - innerRadius) * Math.cos(middleGearDisplayRotation);
+                    const innerGearDisplayCenterY_relative = (middleRadius - innerRadius) * Math.sin(middleGearDisplayRotation);
+                    
+                    const innerGearDisplayAbsCenterX = middleGearDisplayCenterX + innerGearDisplayCenterX_relative;
+                    const innerGearDisplayAbsCenterY = middleGearDisplayCenterY + innerGearDisplayCenterY_relative;
+                    
+                    innerGear
+                        .attr('r', innerRadius * DISPLAY_SCALE_FACTOR)
+                        .attr('cx', innerGearDisplayAbsCenterX * DISPLAY_SCALE_FACTOR)
+                        .attr('cy', innerGearDisplayAbsCenterY * DISPLAY_SCALE_FACTOR);
+                } else {
+                    middleGear.style('display', 'none');
+                    innerGear.style('display', 'inline');
+
+                    const innerGearDisplayCenterX = (outerRadius - innerRadius) * Math.cos(final_t_for_frame);
+                    const innerGearDisplayCenterY = (outerRadius - innerRadius) * Math.sin(final_t_for_frame);
+                    
+                    innerGear
+                        .attr('r', innerRadius * DISPLAY_SCALE_FACTOR)
+                        .attr('cx', innerGearDisplayCenterX * DISPLAY_SCALE_FACTOR)
+                        .attr('cy', innerGearDisplayCenterY * DISPLAY_SCALE_FACTOR);
+                }
+            } else {
+                outerGear.style('display', 'none');
+                middleGear.style('display', 'none');
+                innerGear.style('display', 'none');
+            }
+            
+            // Increment time by the total advancement for this frame
+            t += targetTAdvThisFrame;
             
             // Call the next frame
             requestAnimationFrame(animate);
@@ -346,58 +434,103 @@
         
         // Set up event listeners for controls
         document.getElementById('outer-radius').addEventListener('input', function() {
-            outerRadius = this.value;
+            outerRadius = parseInt(this.value);
             document.getElementById('outer-radius-value').textContent = outerRadius;
-            outerGear.attr('r', outerRadius);
+            outerGear.attr('r', outerRadius * DISPLAY_SCALE_FACTOR);
             clearSpirograph();
         });
         
         document.getElementById('middle-radius').addEventListener('input', function() {
-            middleRadius = this.value;
+            middleRadius = parseInt(this.value);
             document.getElementById('middle-radius-value').textContent = middleRadius;
             clearSpirograph();
         });
         
         document.getElementById('inner-radius').addEventListener('input', function() {
-            innerRadius = this.value;
+            innerRadius = parseInt(this.value);
             document.getElementById('inner-radius-value').textContent = innerRadius;
             clearSpirograph();
         });
         
         document.getElementById('offset').addEventListener('input', function() {
-            penOffsetFromCenter = this.value;
+            penOffsetFromCenter = parseInt(this.value);
             document.getElementById('offset-value').textContent = penOffsetFromCenter;
             clearSpirograph();
         });
         
         document.getElementById('speed').addEventListener('input', function() {
-            speed = this.value;
+            speed = parseInt(this.value);
             document.getElementById('speed-value').textContent = speed;
         });
         
         document.getElementById('use-middle-gear').addEventListener('change', function() {
             useMiddleGear = this.checked;
-            // Toggle visibility of middle radius controls
             document.getElementById('middle-radius-container').style.display = useMiddleGear ? 'block' : 'none';
             clearSpirograph();
+        });
+
+        document.getElementById('show-gear-visuals').addEventListener('change', function() {
+            showGearVisuals = this.checked;
+            // No need to call animate or clear, direct style update is sufficient for immediate effect
+            // The animate loop will respect this flag on its next iteration for ongoing updates.
+            if (showGearVisuals) {
+                penPoint.style('display', 'inline');
+                outerGear.style('display', 'inline');
+                // Middle and inner gear visibility will be handled by the animate loop based on useMiddleGear
+            } else {
+                penPoint.style('display', 'none');
+                outerGear.style('display', 'none');
+                middleGear.style('display', 'none');
+                innerGear.style('display', 'none');
+            }
         });
         
         document.getElementById('clear-button').addEventListener('click', clearSpirograph);
         
         document.getElementById('random-button').addEventListener('click', function() {
-            // Generate random values
-            outerRadius = Math.floor(Math.random() * 120) + 150;
-            middleRadius = Math.floor(Math.random() * 80) + 60;
-            innerRadius = Math.floor(Math.random() * 30) + 20;
-            penOffsetFromCenter = Math.floor(Math.random() * 70) + 30;
-            speed = Math.floor(Math.random() * 5) + 3;
+            // Generate random values for the new 0-100 based system
+            let newOuter, newMiddle, newInner, newOffset;
+
+            newOuter = Math.floor(Math.random() * (100 - 30 + 1)) + 30; // Range 30-100
+
+            let middleMaxPossible = Math.min(newOuter - 1, 70); // 70 is middle slider max
+            if (middleMaxPossible < 7) middleMaxPossible = 7; // Ensure middle can be at least its min
+            newMiddle = Math.floor(Math.random() * (middleMaxPossible - 15 + 1)) + 15;
+            newMiddle = Math.max(7, newMiddle); // Ensure >= middle slider min (7)
+            newMiddle = Math.min(newMiddle, middleMaxPossible);
+
+            let innerMaxPossible = Math.min(newMiddle - 1, 40); // 40 is inner slider max
+            if (innerMaxPossible < 4) innerMaxPossible = 4; // Ensure inner can be at least its min
+            newInner = Math.floor(Math.random() * (innerMaxPossible - 5 + 1)) + 5;
+            newInner = Math.max(4, newInner); // Ensure >= inner slider min (4)
+            newInner = Math.min(newInner, innerMaxPossible);
+            
+            // Ensure newInner is strictly less than newMiddle, and newMiddle strictly less than newOuter.
+            // This can happen if random ranges are tight or limits are hit.
+            if (newInner >= newMiddle) newInner = Math.max(4, newMiddle - 1);
+            if (newMiddle >= newOuter) newMiddle = Math.max(7, newOuter -1);
+            if (newInner >= newMiddle) newInner = Math.max(4, newMiddle - 1); // Re-check after middle adjustment
+
+
+            let offsetMaxPossible = Math.min(newInner * 2, 50); // Cap at slider max (50)
+            if (offsetMaxPossible < 1) offsetMaxPossible = 1;
+            newOffset = Math.floor(Math.random() * (offsetMaxPossible - 1 + 1)) + 1;
+            newOffset = Math.max(1, newOffset); // Ensure >= offset slider min (1)
+            newOffset = Math.min(newOffset, 50);
+
+
+            outerRadius = newOuter;
+            middleRadius = newMiddle;
+            innerRadius = newInner;
+            penOffsetFromCenter = newOffset;
+            // speed = Math.floor(Math.random() * 5) + 3; // Speed can remain as is or randomized
             
             // Update sliders
             updateSlider('outer-radius', outerRadius);
             updateSlider('middle-radius', middleRadius);
             updateSlider('inner-radius', innerRadius);
             updateSlider('offset', penOffsetFromCenter);
-            updateSlider('speed', speed);
+            // updateSlider('speed', speed);
             
             // Clear and restart
             clearSpirograph();
@@ -419,6 +552,37 @@
             this.value = 'custom';
             clearSpirograph();
         });
+
+        // Function to handle slider stepping
+        function handleStep(sliderId, step) {
+            const slider = document.getElementById(sliderId);
+            const valueDisplay = document.getElementById(`${sliderId}-value`);
+            if (!slider || !valueDisplay) return;
+
+            let currentValue = parseInt(slider.value);
+            let newValue = currentValue + step;
+
+            const min = parseInt(slider.min);
+            const max = parseInt(slider.max);
+
+            if (newValue < min) newValue = min;
+            if (newValue > max) newValue = max;
+
+            slider.value = newValue;
+            valueDisplay.textContent = newValue;
+            
+            // Trigger input event to update spirograph and other listeners
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        // Add event listeners for all stepper buttons
+        document.querySelectorAll('.slider-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const sliderId = this.dataset.sliderId;
+                const step = parseInt(this.dataset.step);
+                handleStep(sliderId, step);
+            });
+        });
         
         // Start animation
         animate();
@@ -433,48 +597,86 @@
     </div>
 
     <div class="action-bar">
-        <button id="random-button" class="action-button random-btn">Random</button>
-        <div class="preset-container">
-            <label for="preset-selector">Presets:</label>
-            <select id="preset-selector">
-                <option value="custom" selected>Custom</option>
-                <option value="202,100,20">Starter</option>
-                <option value="200,100,50">Nested 2:1 + 2:1</option>
-                <option value="240,120,40">Nested 2:1 + 3:1</option>
-                <option value="150,90,60">Commensurable 5:3 + 3:2</option>
-                <option value="210,150,90">Commensurable 7:5 + 5:3</option>
-                <option value="120,80,60">Commensurable 3:2 + 4:3</option>
-                <option value="200,100,61">Nested Int + Complex</option>
-                <option value="150,101,68">Near Resonance</option>
-            </select>
+        <div class="action-bar-group action-buttons">
+            <button id="random-button" class="action-button random-btn">Random</button>
+            <button id="clear-button" class="action-button">Clear Trail</button>
         </div>
-        <div class="toggle-container-inline">
-            <input type="checkbox" id="use-middle-gear" checked>
-            <label for="use-middle-gear">Use 3 Gears</label>
+        <div class="action-bar-group action-presets">
+            <div class="preset-container">
+                <label for="preset-selector">Presets:</label>
+                <select id="preset-selector">
+                    <option value="custom" selected>Custom</option>
+                    <option value="99,50,10">Chrysanthemum</option>
+                    <option value="100,66,33">Torus</option>
+                    <option value="100,25,25">Tidal Locking (Add Offset)</option>
+                    <option value="90,60,29">3D Cusp</option>
+                    <option value="90,63,19">Quadricool</option>
+                    <option value="99,81,7">The Council</option>
+                </select>
+            </div>
         </div>
-        <button id="clear-button" class="action-button">Clear Trail</button>
+        <div class="action-bar-group action-toggles">
+            <div class="toggle-container-inline">
+                <input type="checkbox" id="use-middle-gear" checked>
+                <label for="use-middle-gear">Use 3 Gears</label>
+            </div>
+            <div class="toggle-container-inline">
+                <input type="checkbox" id="show-gear-visuals" checked>
+                <label for="show-gear-visuals">Show Gears</label>
+            </div>
+        </div>
     </div>
 
     <div class="controls">
         <div class="slider-container">
-            <label for="outer-radius">Outer Radius: <span id="outer-radius-value">205</span></label>
-            <input type="range" id="outer-radius" min="50" max="300" value="202">
+            <label for="outer-radius">Outer Radius: <span id="outer-radius-value">99</span></label>
+            <div class="slider-wrapper">
+                <div class="slider-steppers">
+                    <button class="slider-btn increment-btn" data-slider-id="outer-radius" data-step="1">▲</button>
+                    <button class="slider-btn decrement-btn" data-slider-id="outer-radius" data-step="-1">▼</button>
+                </div>
+                <input type="range" id="outer-radius" min="17" max="100" value="99">
+            </div>
         </div>
         <div class="slider-container" id="middle-radius-container">
-            <label for="middle-radius">Middle Radius: <span id="middle-radius-value">100</span></label>
-            <input type="range" id="middle-radius" min="20" max="299" value="100">
+            <label for="middle-radius">Middle Radius: <span id="middle-radius-value">50</span></label>
+            <div class="slider-wrapper">
+                <div class="slider-steppers">
+                    <button class="slider-btn increment-btn" data-slider-id="middle-radius" data-step="1">▲</button>
+                    <button class="slider-btn decrement-btn" data-slider-id="middle-radius" data-step="-1">▼</button>
+                </div>
+                <input type="range" id="middle-radius" min="7" max="99" value="50">
+            </div>
         </div>
         <div class="slider-container">
-            <label for="inner-radius">Inner Radius: <span id="inner-radius-value">25</span></label>
-            <input type="range" id="inner-radius" min="10" max="298" value="20">
+            <label for="inner-radius">Inner Radius: <span id="inner-radius-value">10</span></label>
+            <div class="slider-wrapper">
+                <div class="slider-steppers">
+                    <button class="slider-btn increment-btn" data-slider-id="inner-radius" data-step="1">▲</button>
+                    <button class="slider-btn decrement-btn" data-slider-id="inner-radius" data-step="-1">▼</button>
+                </div>
+                <input type="range" id="inner-radius" min="4" max="98" value="10">
+            </div>
         </div>
         <div class="slider-container">
             <label for="offset">Pen Offset: <span id="offset-value">10</span></label>
-            <input type="range" id="offset" min="1" max="150" value="10">
+            <div class="slider-wrapper">
+                <div class="slider-steppers">
+                    <button class="slider-btn increment-btn" data-slider-id="offset" data-step="1">▲</button>
+                    <button class="slider-btn decrement-btn" data-slider-id="offset" data-step="-1">▼</button>
+                </div>
+                <input type="range" id="offset" min="1" max="50" value="10">
+            </div>
         </div>
         <div class="slider-container">
-            <label for="speed">Speed: <span id="speed-value">8</span></label>
-            <input type="range" id="speed" min="1" max="10" value="8">
+            <label for="speed">Speed: <span id="speed-value">25</span></label>
+            <div class="slider-wrapper">
+                <div class="slider-steppers">
+                    <button class="slider-btn increment-btn" data-slider-id="speed" data-step="1">▲</button>
+                    <button class="slider-btn decrement-btn" data-slider-id="speed" data-step="-1">▼</button>
+                </div>
+                <input type="range" id="speed" min="1" max="100" value="25">
+            </div>
         </div>
     </div>
 

@@ -6,6 +6,7 @@ from tools.image_utils.routes import image_utils_bp, TOOL_META as image_utils_me
 from tools.print_optimizer.routes import print_optimizer_bp, TOOL_META as print_optimizer_meta
 from tools.chaosgraph.routes import chaosgraph_bp, TOOL_META as chaosgraph_meta
 from tools.runic.routes import runic_bp, TOOL_META as runic_meta
+from tools.subvision.routes import subvision_bp, TOOL_META as subvision_meta
 
 # Create Flask app
 app = Flask(__name__, template_folder='templates')
@@ -16,13 +17,15 @@ app.register_blueprint(image_utils_bp)
 app.register_blueprint(print_optimizer_bp)
 app.register_blueprint(chaosgraph_bp)
 app.register_blueprint(runic_bp)
+app.register_blueprint(subvision_bp)
 
 # Tool metadata
 TOOLS = [
     image_utils_meta,
     print_optimizer_meta,
     chaosgraph_meta,
-    runic_meta
+    runic_meta,
+    subvision_meta
 ]
 
 # Add tools list to all template renders
